@@ -3,26 +3,31 @@ using BepInEx;
 using BepInEx.Configuration;
 using HarmonyLib;
 using System.IO;
+using TootTallyCore.Graphics.Animations;
 using TootTallyCore.Utils.TootTallyModules;
 using TootTallySettings;
 using UnityEngine;
 
-namespace TootTally.ModuleTemplate
+namespace TootTallyWickedCursorMovement
 {
     [BepInPlugin(PluginInfo.PLUGIN_GUID, PluginInfo.PLUGIN_NAME, PluginInfo.PLUGIN_VERSION)]
-    [BepInDependency("TootTallyCore", BepInDependency.DependencyFlags.HardDependency)]
     [BepInDependency("TootTallySettings", BepInDependency.DependencyFlags.HardDependency)]
     public class Plugin : BaseUnityPlugin, ITootTallyModule
     {
         public static Plugin Instance;
 
-        private const string CONFIG_NAME = "ModuleTemplate.cfg";
+        private const string CONFIG_NAME = "WickedCursorMovement.cfg";
+        private const string CONFIG_FIELD = "WickedCursorMovement";
+
+        private const float DEFAULT_FREQ = 3.5f;
+        private const float DEFAULT_DAMP = 0.12f;
+        private const float DEFAULT_INIT = 1.5f;
         private Harmony _harmony;
         public ConfigEntry<bool> ModuleConfigEnabled { get; set; }
         public bool IsConfigInitialized { get; set; }
 
         //Change this name to whatever you want
-        public string Name { get => PluginInfo.PLUGIN_NAME; set => Name = value; }
+        public string Name { get => "WickedCursorMovement"; set => Name = value; }
 
         public static TootTallySettingPage settingPage;
 
@@ -41,7 +46,7 @@ namespace TootTally.ModuleTemplate
         private void TryInitialize()
         {
             // Bind to the TTModules Config for TootTally
-            ModuleConfigEnabled = TootTallyCore.Plugin.Instance.Config.Bind("Modules", "<insert module name here>", true, "<insert module description here>");
+            ModuleConfigEnabled = TootTallyCore.Plugin.Instance.Config.Bind("Modules", "Wicked Cursor Movement", true, "For the people that are getting too good at the game");
             TootTallyModuleManager.AddModule(this);
             TootTallySettings.Plugin.Instance.AddModuleToSettingPage(this);
         }
@@ -50,18 +55,18 @@ namespace TootTally.ModuleTemplate
         {
             string configPath = Path.Combine(Paths.BepInExRootPath, "config/");
             ConfigFile config = new ConfigFile(configPath + CONFIG_NAME, true) { SaveOnConfigSet = true };
-            // Set your config here by binding them to the related ConfigEntry
-            // Example:
-            // Unlimited = config.Bind(CONFIG_FIELD, "Unlimited", DEFAULT_UNLISETTING)
+            Frequency = config.Bind(CONFIG_FIELD, "Frequency", DEFAULT_FREQ, "The strenght of the vibration (Higher vibrates more).");
+            Damping = config.Bind(CONFIG_FIELD, "Damping", DEFAULT_DAMP, "How fast the cursor settle at the original target.\n(0 will vibrate forever, 100 will not vibrate).");
+            InitialResponse = config.Bind(CONFIG_FIELD, "InitialResponse", DEFAULT_INIT, "How much it anticipates the motion.\n(value higher than one will take time to accelerate, value lower than 0 will ancitipate the motion).");
 
-            settingPage = TootTallySettingsManager.AddNewPage("ModulePageName", "HeaderText", 40f, new Color(0,0,0,0));
-            if (settingPage != null) {
-                // Use TootTallySettingPage functions to add your objects to TootTallySetting
-                // Example:
-                // page.AddToggle(name, option.Unlimited);
-            }
+            settingPage = TootTallySettingsManager.AddNewPage("WickedCursor\nMovementV2", "Wicked Cursor", 40f, new Color(0, 0, 0, 0));
+            settingPage?.AddSlider("Frequency", .01f, 10f, Frequency, false);
+            settingPage?.AddSlider("Damping", 0f, 10f, Damping, false);
+            settingPage?.AddSlider("Initial Response", -10f, 10f, InitialResponse, false);
+            settingPage.AddLabel($"Some good default values are:\nFreq: {DEFAULT_FREQ}\nDamp: {DEFAULT_DAMP}\nInit: {DEFAULT_INIT}");
+            settingPage.AddLabel("To turn off the effect, go to the TootTally Module's page and turn off the module.");
 
-            _harmony.PatchAll(typeof(ModuleTemplatePatches));
+            _harmony.PatchAll(typeof(WickedCursorPatches));
             LogInfo($"Module loaded!");
         }
 
@@ -72,13 +77,37 @@ namespace TootTally.ModuleTemplate
             LogInfo($"Module unloaded!");
         }
 
-        public static class ModuleTemplatePatches
+        public static class WickedCursorPatches
         {
-            // Apply your Trombone Champ patches here
+            public static SecondDegreeDynamicsAnimation cursorDynamics;
+            public static Vector2 cursorPosition;
+            public static Vector2 cursorDestination;
+
+            [HarmonyPatch(typeof(GameController), nameof(GameController.Start))]
+            [HarmonyPostfix]
+            public static void GameControllerStartPostfixPatch(GameController __instance)
+            {
+                cursorDynamics = new SecondDegreeDynamicsAnimation(Instance.Frequency.Value, Instance.Damping.Value, Instance.InitialResponse.Value);
+
+                cursorPosition = __instance.pointer.transform.localPosition;
+                cursorDynamics.SetStartVector(cursorPosition);
+            }
+
+            [HarmonyPatch(typeof(GameController), nameof(GameController.Update))]
+            [HarmonyPrefix]
+            public static void GameControllerUpdatePostfixPatch(GameController __instance)
+            {
+                cursorDestination = Input.mousePosition / 2.42f;
+                cursorDestination.y -= 440f / 2f;
+
+                if (cursorDynamics != null && cursorPosition != cursorDestination)
+                    cursorPosition.y = cursorDynamics.GetNewVector(cursorDestination, Time.deltaTime).y;
+                __instance.pointer.transform.localPosition = cursorPosition;
+            }
         }
 
-        // Add your ConfigEntry objects that define your configs
-        // Example:
-        // public ConfigEntry<bool> Unlimited { get; set; }
+        public ConfigEntry<float> Frequency { get; set; }
+        public ConfigEntry<float> Damping { get; set; }
+        public ConfigEntry<float> InitialResponse { get; set; }
     }
 }
