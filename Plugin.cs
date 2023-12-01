@@ -66,6 +66,8 @@ namespace TootTallyWickedCursorMovement
             settingPage.AddLabel($"Some good default values are:\nFreq: {DEFAULT_FREQ}\nDamp: {DEFAULT_DAMP}\nInit: {DEFAULT_INIT}");
             settingPage.AddLabel("To turn off the effect, go to the TootTally Module's page and turn off the module.");
 
+            TootTallySettings.Plugin.TryAddThunderstoreIconToPageButton(Instance.Info.Location, Name, settingPage);
+
             _harmony.PatchAll(typeof(WickedCursorPatches));
             LogInfo($"Module loaded!");
         }
